@@ -1,1 +1,34 @@
+name: Build FB-01 Librarian Windows installer
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'packaging/**'
+      - 'index.html'
+      - 'app.js'
+      - 'bank.js'
+      - '.github/workflows/build-windows.yml'
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile GUI launcher (no console)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build | Out-Null
+          $csc = "${env:WINDIR}\Microsoft.NET\Framework\v4.0.30319\csc.exe"
+          & $csc /nologo /target:winexe /optimize+ /out:build\FB01-Librarian.exe /reference:System.Windows.Forms.dll packaging\Launcher.cs
+          if ($LASTEXITCODE -ne 0) { throw 'C# compilation failed' }
+      - name: Build installer
+        shell: pwsh
+        run: |
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' 'packaging\FB01-Librarian.iss'
+          if ($LASTEXITCODE -ne 0) { throw 'Installer build failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FB01-Librarian-v0.2-Windows
+          path: |
+            dist/*.exe
+            build/FB01-Librarian.exe
 
