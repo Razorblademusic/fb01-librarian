@@ -4,6 +4,105 @@ const sources = [];
 let working, midi, busy = false;
 let auditionBusy = false, auditionPending = null, keyboardPort = null;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+// Settings are scoped to the persistent Chrome profile and fixed localhost origin.
+const PREF_KEY = 'fb01-librarian-v031-settings';
+function getPrefs() { try { return JSON.parse(localStorage.getItem(PREF_KEY) || '{}'); } catch { return {}; } }
+function savePrefs() {
+  const p = getPrefs();
+  for (const id of ['input','output','keyboard']) {
+    const port = midi && (id === 'output' ? midi.outputs : midi.inputs).get($(id).value);
+    if (port) p[id] = {id:port.id, name:port.name};
+  }
+  p.channel = $('channel').value;
+  p.auditionChannel = $('auditionChannel').value;
+  p.autoAudition = $('autoAudition').checked;
+  localStorage.setItem(PREF_KEY, JSON.stringify(p));
+}
+function restorePort(id) {
+  const wanted = getPrefs()[id];
+  if (!wanted) return;
+  const list = $(id);
+  const match = Array.from(list.options).find(o => o.value === wanted.id) ||
+    Array.from(list.options).find(o => o.value && o.text === wanted.name);
+  if (match) list.value = match.value;
+}
+function restorePrefs() {
+  const p = getPrefs();
+  if (p.channel && /^([1-9]|1[0-6])$/.test(p.channel)) $('channel').value = p.channel;
+  if (p.auditionChannel && /^([1-9]|1[0-6])$/.test(p.auditionChannel)) $('auditionChannel').value = p.auditionChannel;
+  if (typeof p.autoAudition === 'boolean') $('autoAudition').checked = p.autoAudition;
+}
+// File System Access handles are structured-cloned into IndexedDB, not localStorage.
+const folderDb = () => new Promise((resolve,reject) => {
+  const req = indexedDB.open('fb01-librarian-folders',1);
+  req.onupgradeneeded = () => req.result.createObjectStore('handles');
+  req.onsuccess = () => resolve(req.result);
+  req.onerror = () => reject(req.error);
+});
+async function folderHandle(value) {
+  const db = await folderDb();
+  return new Promise((resolve,reject) => {
+    const tx=db.transaction('handles', value ? 'readwrite':'readonly');
+    const req=value ? tx.objectStore('handles').put(value,'sysex') : tx.objectStore('handles').get('sysex');
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error);
+    tx.oncomplete=()=>db.close();
+  });
+}
+let sysexFolder = null;
+async function chooseFolder() {
+  if (!window.showDirectoryPicker) { status('Chrome folder access is unavailable. Use normal Open and Save instead.'); return; }
+  try {
+    sysexFolder = await showDirectoryPicker({id:'fb01-sysex',mode:'readwrite',startIn:sysexFolder || 'documents'});
+    await folderHandle(sysexFolder);
+    $('folderLabel').textContent = sysexFolder.name;
+    status('Default SysEx folder: '+sysexFolder.name);
+  } catch(e) { if(e.name!=='AbortError') status('Folder selection failed: '+e.message); }
+}
+async function usableFolder(write=false) {
+  if (!sysexFolder) return null;
+  const mode = write ? 'readwrite':'read';
+  if ((await sysexFolder.queryPermission({mode})) === 'granted') return sysexFolder;
+  // Only request permission from a direct user click, never during startup.
+  if ((await sysexFolder.requestPermission({mode})) === 'granted') return sysexFolder;
+  return null;
+}
+async function openFromFolder() {
+  try {
+    const folder=await usableFolder(false);
+    if (!folder) { $('files').click(); return; }
+    const handles=[];
+    for await (const [name,handle] of folder.entries()) if(handle.kind==='file' && /\.syx$/i.test(name)) handles.push(handle);
+    handles.sort((a,b)=>a.name.localeCompare(b.name));
+    if (!handles.length) { status('No .syx files in '+folder.name); return; }
+    const name=prompt('Enter a SysEx filename from '+folder.name+':\n'+handles.map(h=>h.name).join('\n').slice(0,2000),handles[0].name);
+    if (!name) return;
+    const handle=handles.find(h=>h.name.toLowerCase()===name.trim().toLowerCase());
+    if (!handle) { status('File not found in default folder.'); return; }
+    await loadFiles([await handle.getFile()]);
+  } catch(e) { status('Folder open failed: '+e.message); }
+}
+async function saveToFolder(bytes,name) {
+  try {
+    const folder=await usableFolder(true);
+    if (!folder) { download(bytes,name); return; }
+    const filename=prompt('Save SysEx as:',name);
+    if (!filename) return;
+    if (!/^[^\\/:*?"<>|]+\.syx$/i.test(filename)) throw Error('Use a valid .syx filename.');
+    const file=await folder.getFileHandle(filename,{create:true});
+    // Explicit confirmation before replacing existing data.
+    const existing=await file.getFile();
+    if(existing.size && !confirm('Overwrite '+filename+'?')) return;
+    const stream=await file.createWritable(); await stream.write(bytes); await stream.close();
+    status('Saved '+filename+' to '+folder.name);
+  } catch(e) { status('Folder save failed: '+e.message); }
+}
+async function initializeSettings() {
+  restorePrefs();
+  try { sysexFolder=await folderHandle(); if(sysexFolder) $('folderLabel').textContent=sysexFolder.name; }
+  catch(e) { status('Saved folder unavailable: '+e.message); }
+}
+
 const status = message => { $('status').textContent = message; };
 const source = () => sources[$('sources').selectedIndex];
 const slot = () => $('hardware').selectedIndex;
@@ -65,6 +164,7 @@ function ports() {
     list.value=previous || 'missing';
     if (list.selectedIndex<0) list.selectedIndex=list.options.length===2 ? 1 : 0;
   }
+  restorePort('input'); restorePort('output');
   keyboardPorts();
   controls();
 }
@@ -124,6 +224,7 @@ function keyboardPorts() {
   }
   list.value = previous;
   if (list.selectedIndex < 0) list.selectedIndex = 0;
+  restorePort('keyboard');
   attachKeyboard();
 }
 function attachKeyboard() {
@@ -190,7 +291,9 @@ function queueAudition() {
   if (auditionBusy) { auditionPending = {bank,index}; return; }
   auditionVoice(bank,index);
 }
-$('keyboard').onchange = attachKeyboard;
+$('keyboard').onchange = () => { attachKeyboard(); savePrefs(); };
+for (const id of ['auditionChannel','channel','autoAudition']) $(id).addEventListener('change',savePrefs);
+$('folder').onclick = chooseFolder;
 $('audition').onclick = queueAudition;
 $('panic').onclick = () => { try { allNotesOff(); status('All notes off sent.'); } catch(error) { status(error.message); } };
 $('sourceVoices').onchange = () => { if ($('autoAudition').checked) queueAudition(); };
@@ -204,7 +307,8 @@ $('connect').onclick=async () => {
     status('Select your MIDI interface input and output.');
   } catch(error) { status('MIDI access failed. '+error.message); }
 };
-$('input').onchange=$('output').onchange=$('hardware').onchange=controls;
+$('input').onchange=$('output').onchange=()=>{savePrefs();controls();};
+$('hardware').onchange=controls;
 $('request').onclick=() => transfer(async (input,output) => {
   const ch=channel(), bank=slot();
   await output.open();
@@ -240,10 +344,13 @@ $('send').onclick=() => {
     status('The FB-01 acknowledged the write to RAM bank '+(bank+1)+'.');
   });
 };
-$('open').onclick=()=>$('files').click();
+$('open').onclick=()=>sysexFolder ? openFromFolder() : $('files').click();
 $('files').onchange=async event=>{
   const files=Array.from(event.target.files);
   event.target.value='';
+  await loadFiles(files);
+};
+async function loadFiles(files) {
   let loaded=0;
   const errors=[];
   for (const file of files) {
@@ -264,7 +371,7 @@ $('files').onchange=async event=>{
     } catch(error) { errors.push(file.name+' · '+error.message); }
   }
   status('Opened '+loaded+' bank(s). '+errors.join(' '));
-};
+}
 $('sources').onchange=()=>{fillVoices('sourceVoices',source(),0); controls(); if ($('autoAudition').checked) queueAudition();};
 $('workingVoices').onchange=()=> {
   $('name').value=FB.name(working.voices[$('workingVoices').selectedIndex],7);
@@ -293,6 +400,8 @@ for(const [id,step] of [['up',-1],['down',1]]) $(id).onclick=()=>{
   [working.voices[index],working.voices[next]]=[working.voices[next],working.voices[index]];
   workingList(next);
 };
-$('backup').onclick=()=>download(source().original,'FB01-bank-'+(source().slot+1)+'-backup.syx');
-$('save').onclick=()=>download(FB.encode(working),'FB01-working-bank.syx');
+$('backup').onclick=()=>saveToFolder(source().original,'FB01-bank-'+(source().slot+1)+'-backup.syx');
+$('save').onclick=()=>saveToFolder(FB.encode(working),'FB01-working-bank.syx');
 controls();
+
+initializeSettings();

@@ -13,6 +13,7 @@
 <div class="row"><label>Hardware bank<select id="hardware"></select></label><button id="request">Request bank</button><button id="listen">Listen for panel dump</button><button id="send">Send working bank</button></div>
 </section>
 <p id="status" role="status">Open a .syx file or enable MIDI to receive a bank.</p>
+<section><div class="row"><button id="folder">Choose default SysEx folder</button><span id="folderLabel">No default folder selected</span></div></section>
 <div class="grid">
 <section><h2>Source banks</h2><div class="row"><button id="open">Open .syx</button><input id="files" type="file" accept=".syx" multiple hidden><select id="sources" aria-label="Source bank"></select></div>
 <select id="sourceVoices" class="voices" aria-label="Source voice" size="18"></select>
