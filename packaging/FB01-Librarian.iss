@@ -1,5 +1,5 @@
 #define AppName "FB-01 Librarian"
-#define AppVersion "0.3.1"
+#define AppVersion "0.3.2"
 [Setup]
 AppId={{B69DF2B8-C27D-4A1A-BAF7-0DFAE8C54240}
 AppName={#AppName}
@@ -7,21 +7,23 @@ AppVersion={#AppVersion}
 DefaultDirName={autopf}\FB-01 Librarian
 DefaultGroupName={#AppName}
 OutputDir=..\dist
-OutputBaseFilename=FB01-Librarian-v0.3.1-Setup
+OutputBaseFilename=FB01-Librarian-v0.3.2-Setup
 Compression=lzma
 SolidCompression=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 UninstallDisplayIcon={app}\FB01-Librarian.exe
+SetupIconFile=FB01-Librarian.ico
 [Files]
+Source: "FB01-Librarian.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\build\FB01-Librarian.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\index.html"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\app.js"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\bank.js"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.txt"; DestDir: "{app}"; Flags: ignoreversion
 [Icons]
-Name: "{group}\FB-01 Librarian"; Filename: "{app}\FB01-Librarian.exe"
-Name: "{autodesktop}\FB-01 Librarian"; Filename: "{app}\FB01-Librarian.exe"; Tasks: desktopicon
+Name: "{group}\FB-01 Librarian"; Filename: "{app}\FB01-Librarian.exe"; IconFilename: "{app}\FB01-Librarian.ico"
+Name: "{autodesktop}\FB-01 Librarian"; Filename: "{app}\FB01-Librarian.exe"; IconFilename: "{app}\FB01-Librarian.ico"; Tasks: desktopicon
 [Tasks]
 Name: desktopicon; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
 [Run]
