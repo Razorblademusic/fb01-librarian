@@ -27,7 +27,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Installer build failed' }
       - uses: actions/upload-artifact@v4
         with:
-          name: FB01-Librarian-v0.3-Windows
+          name: FB01-Librarian-v0.3.1-Windows
           path: |
             dist/*.exe
             build/FB01-Librarian.exe
