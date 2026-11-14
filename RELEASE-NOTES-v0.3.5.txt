@@ -1,0 +1,11 @@
+FB-01 Librarian v0.3.5 — Working audition and Hardware Navigator
+
+- Source and Working bank voices can both be auditioned using the active list.
+- Auto audition follows selection in either list; manual audition follows the last active list.
+- Hardware Navigator below Working bank: bank 1–7, patch 1–48.
+- Click the navigator then use Up/Down for bank and Left/Right for patch.
+- Hardware navigator uses FB-01 channel-specific configuration parameter 04 (bank) and 05 (voice).
+- Does not issue any STORE or RAM-bank dump/write commands.
+- Retains v0.3.4 file Save As changes and v0.3.3 compact layout.
+
+Not hardware-tested. Please back up RAM banks and test cautiously. Navigator selects instrument(s) on the chosen audition MIDI channel; it does not change all eight instruments or the front panel's current selection necessarily.
