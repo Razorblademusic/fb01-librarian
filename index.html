@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FB-01 Librarian</title>
+<style>
+*{box-sizing:border-box} body{margin:0;background:#121922;color:#edf2f6;font:15px "Segoe UI",sans-serif} main{max-width:1120px;margin:auto;padding:28px} h1{font-size:32px;margin:0 0 20px} h2{font-size:16px;margin:0 0 12px} section{background:#202c38;padding:18px;border:1px solid #405062;border-radius:10px;margin-bottom:14px} .row{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:10px} .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px} label{display:grid;gap:5px} button,select,input{font:inherit;color:inherit;background:#121c27;border:1px solid #697e91;padding:8px;border-radius:5px} button{cursor:pointer} button:disabled{opacity:.42;cursor:default} button:hover:enabled{border-color:#82e6cd} .primary{background:#8ce7d0;color:#102721;border-color:#8ce7d0;font-weight:600} .voices{width:100%;font:15px Consolas,monospace;margin-bottom:12px} #status{color:#a9ebdd;min-height:2em;margin:0 0 14px} @media(max-width:700px){.grid{grid-template-columns:1fr}}
+</style>
+<main>
+<h1>Yamaha FB-01 Librarian</h1>
+<section aria-label="MIDI connection">
+<div class="row"><button id="connect" class="primary">Enable MIDI</button>
+<label>MIDI input<select id="input"></select></label><label>MIDI output<select id="output"></select></label>
+<label>System channel<input type="number" id="channel" min="1" max="16" value="1"></label></div>
+<div class="row"><label>Hardware bank<select id="hardware"></select></label><button id="request">Request bank</button><button id="listen">Listen for panel dump</button><button id="send">Send working bank</button></div>
+</section>
+<p id="status" role="status">Open a .syx file or enable MIDI to receive a bank.</p>
+<div class="grid">
+<section><h2>Source banks</h2><div class="row"><button id="open">Open .syx</button><input id="files" type="file" accept=".syx" multiple hidden><select id="sources" aria-label="Source bank"></select></div>
+<select id="sourceVoices" class="voices" aria-label="Source voice" size="18"></select>
+<div class="row"><button id="clone">Use as working bank</button><button id="copy">Copy voice to selected slot</button><button id="backup">Save original .syx</button></div></section>
+<section><h2>Working bank</h2><select id="workingVoices" class="voices" aria-label="Working voice" size="21"></select>
+<div class="row"><label>Voice name<input id="name" maxlength="7" size="9"></label><button id="rename">Rename</button><button id="up">Move up</button><button id="down">Move down</button><button id="save" class="primary">Save .syx</button></div></section>
+</div></main><script src="bank.js"></script><script src="app.js"></script>
