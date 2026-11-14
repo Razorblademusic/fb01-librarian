@@ -2,6 +2,8 @@
 const $ = id => document.getElementById(id);
 const sources = [];
 let working, midi, busy = false;
+let auditionBusy = false, auditionPending = null, keyboardPort = null;
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const status = message => { $('status').textContent = message; };
 const source = () => sources[$('sources').selectedIndex];
 const slot = () => $('hardware').selectedIndex;
@@ -28,6 +30,8 @@ function controls() {
     connect:!busy && !midi, clone:source(), backup:source(), copy:source() && working,
     rename:working, up:selected>0, down:selected>=0 && selected<47, save:working
   };
+  enabled.audition = !busy && !auditionBusy && !!source() && !!$('output').value;
+  enabled.panic = !!midi && !!$('output').value;
   for (const [id,on] of Object.entries(enabled)) $(id).disabled = !on;
 }
 function workingList(index=0) {
@@ -41,6 +45,7 @@ function addSource(bank, label) {
   $('sources').selectedIndex = sources.length-1;
   fillVoices('sourceVoices',bank,0);
   controls();
+  if ($('autoAudition').checked && midi) queueAudition();
 }
 function download(bytes, filename) {
   const url = URL.createObjectURL(new Blob([bytes], {type:'application/octet-stream'}));
@@ -60,6 +65,7 @@ function ports() {
     list.value=previous || 'missing';
     if (list.selectedIndex<0) list.selectedIndex=list.options.length===2 ? 1 : 0;
   }
+  keyboardPorts();
   controls();
 }
 const request = (ch,bank) => [240,67,117,ch,32,0,bank,247];
@@ -102,6 +108,93 @@ async function transfer(action) {
     controls();
   }
 }
+
+// Audition edits the selected instrument's volatile voice buffer only. No STORE or bank write.
+function auditionMidiChannel() {
+  const value = Number($('auditionChannel').value);
+  if (!Number.isInteger(value) || value < 1 || value > 16) throw Error('Audition MIDI channel must be 1–16.');
+  return value - 1;
+}
+function keyboardPorts() {
+  const list = $('keyboard'), previous = list.value;
+  list.replaceChildren(new Option('Select USB keyboard', ''));
+  if (!midi) return;
+  for (const port of midi.inputs.values()) {
+    if (port.state === 'connected') list.add(new Option(port.name || port.id, port.id));
+  }
+  list.value = previous;
+  if (list.selectedIndex < 0) list.selectedIndex = 0;
+  attachKeyboard();
+}
+function attachKeyboard() {
+  if (keyboardPort) keyboardPort.removeEventListener('midimessage', forwardKeyboard);
+  keyboardPort = midi?.inputs.get($('keyboard').value) || null;
+  if (keyboardPort) keyboardPort.addEventListener('midimessage', forwardKeyboard);
+}
+function forwardKeyboard(event) {
+  const output = midi?.outputs.get($('output').value);
+  if (!output || busy || auditionBusy) return;
+  const bytes = event.data;
+  if (!bytes?.length || bytes[0] < 0x80 || bytes[0] >= 0xf0) return;
+  // Channel voice messages only: note, aftertouch, CC, program change, bend.
+  // Program change is excluded: it would replace the auditioned sound.
+  const type = bytes[0] & 0xf0;
+  if (type === 0xc0) return;
+  try { output.send([type | auditionMidiChannel(), ...bytes.slice(1)]); }
+  catch (error) { status('Keyboard MIDI error: ' + error.message); }
+}
+function allNotesOff() {
+  const output = midi?.outputs.get($('output').value);
+  if (!output) return;
+  const ch = auditionMidiChannel();
+  output.send([0xb0 | ch, 64, 0]); // sustain off
+  output.send([0xb0 | ch, 123, 0]); // all notes off
+  output.send([0xb0 | ch, 120, 0]); // all sound off
+}
+async function auditionVoice(bank, index) {
+  if (!bank || index < 0 || index >= 48 || !midi) return;
+  const output = midi.outputs.get($('output').value);
+  if (!output) { status('Select a MIDI output connected to FB-01 MIDI IN.'); return; }
+  const voice = bank.voices[index];
+  if (!voice || voice.length !== 64) { status('Invalid voice data.'); return; }
+  auditionBusy = true;
+  controls();
+  try {
+    const sys = channel();
+    const ch = auditionMidiChannel();
+    await output.open();
+    allNotesOff();
+    status('Loading ' + (FB.name(voice,7) || 'voice') + ' into FB-01 instrument 1 edit buffer…');
+    // FB-01 instrument-specific voice parameter changes: F0 43 75 0s 18+i 40+offset loNib hiNib F7.
+    // This edits the active buffer, never issues a store-to-RAM operation.
+    for (let i = 0; i < 64; i++) {
+      const value = voice[i];
+      output.send([0xf0,0x43,0x75,sys,0x18,0x40+i,value&15,value>>4,0xf7]);
+      await sleep(12); // gentle pacing for 1980s hardware
+    }
+    status('Audition ready: ' + (FB.name(voice,7) || '(unnamed)') + '. Play your USB keyboard on MIDI channel ' + (ch+1) + '.');
+  } catch(error) { status('Audition failed: '+error.message); }
+  finally {
+    auditionBusy = false;
+    controls();
+    if (auditionPending) {
+      const next = auditionPending;
+      auditionPending = null;
+      if (next.bank === source() && next.index === $('sourceVoices').selectedIndex) auditionVoice(next.bank,next.index);
+    }
+  }
+}
+function queueAudition() {
+  const bank = source(), index = $('sourceVoices').selectedIndex;
+  if (!bank || index < 0) return;
+  if (auditionBusy) { auditionPending = {bank,index}; return; }
+  auditionVoice(bank,index);
+}
+$('keyboard').onchange = attachKeyboard;
+$('audition').onclick = queueAudition;
+$('panic').onclick = () => { try { allNotesOff(); status('All notes off sent.'); } catch(error) { status(error.message); } };
+$('sourceVoices').onchange = () => { if ($('autoAudition').checked) queueAudition(); };
+
 $('connect').onclick=async () => {
   try {
     if (!navigator.requestMIDIAccess) throw Error('Open this app in Microsoft Edge or Chrome.');
@@ -172,7 +265,7 @@ $('files').onchange=async event=>{
   }
   status('Opened '+loaded+' bank(s). '+errors.join(' '));
 };
-$('sources').onchange=()=>{fillVoices('sourceVoices',source(),0); controls();};
+$('sources').onchange=()=>{fillVoices('sourceVoices',source(),0); controls(); if ($('autoAudition').checked) queueAudition();};
 $('workingVoices').onchange=()=> {
   $('name').value=FB.name(working.voices[$('workingVoices').selectedIndex],7);
   controls();
