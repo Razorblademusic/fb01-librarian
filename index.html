@@ -9,13 +9,14 @@
 <section aria-label="MIDI connection">
 <div class="row"><button id="connect" class="primary">Enable MIDI</button>
 <label>MIDI input<select id="input"></select></label><label>MIDI output<select id="output"></select></label>
-<label>System channel<input type="number" id="channel" min="1" max="16" value="1"></label></div>
+<label>USB keyboard<select id="keyboard"></select></label><label>Audition MIDI channel<input id="auditionChannel" type="number" min="1" max="16" value="1"></label><label>System channel<input type="number" id="channel" min="1" max="16" value="1"></label></div>
 <div class="row"><label>Hardware bank<select id="hardware"></select></label><button id="request">Request bank</button><button id="listen">Listen for panel dump</button><button id="send">Send working bank</button></div>
 </section>
 <p id="status" role="status">Open a .syx file or enable MIDI to receive a bank.</p>
 <div class="grid">
 <section><h2>Source banks</h2><div class="row"><button id="open">Open .syx</button><input id="files" type="file" accept=".syx" multiple hidden><select id="sources" aria-label="Source bank"></select></div>
 <select id="sourceVoices" class="voices" aria-label="Source voice" size="18"></select>
+<div class="row"><label style="display:flex;align-items:center;gap:7px"><input id="autoAudition" type="checkbox" checked>Audition on selection</label><button id="audition">Audition selected voice</button><button id="panic">All Notes Off</button></div>
 <div class="row"><button id="clone">Use as working bank</button><button id="copy">Copy voice to selected slot</button><button id="backup">Save original .syx</button></div></section>
 <section><h2>Working bank</h2><select id="workingVoices" class="voices" aria-label="Working voice" size="21"></select>
 <div class="row"><label>Voice name<input id="name" maxlength="7" size="9"></label><button id="rename">Rename</button><button id="up">Move up</button><button id="down">Move down</button><button id="save" class="primary">Save .syx</button></div></section>
