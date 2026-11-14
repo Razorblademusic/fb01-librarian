@@ -26,11 +26,11 @@ namespace FB01Librarian {
    foreach(string file in new [] {"index.html","app.js","bank.js"})
     if(!File.Exists(Path.Combine(root,file))) throw new Exception("Missing librarian file: "+file);
    string chrome=FindChrome();
-   TcpListener server=new TcpListener(IPAddress.Loopback,0);
+   TcpListener server=new TcpListener(IPAddress.Loopback,18701);
    server.Start();
    int port=((IPEndPoint)server.LocalEndpoint).Port;
    string url="http://127.0.0.1:"+port+"/";
-   string profile=Path.Combine(Path.GetTempPath(),"FB01-Librarian-"+Guid.NewGuid().ToString("N"));
+   string profile=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"FB01-Librarian","ChromeProfile");
    Directory.CreateDirectory(profile);
    Process browser=null;
    try {
@@ -43,7 +43,7 @@ namespace FB01Librarian {
    } finally {
     server.Stop();
     if(browser!=null && !browser.HasExited) try {browser.Kill();} catch {}
-    try {Directory.Delete(profile,true);} catch {}
+    // Preserve Chrome profile: MIDI permissions, localStorage and IndexedDB settings.
    }
   }
   static void Serve(TcpClient client,string root) {
