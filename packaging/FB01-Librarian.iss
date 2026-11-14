@@ -1,5 +1,5 @@
 #define AppName "FB-01 Librarian"
-#define AppVersion "0.2.1"
+#define AppVersion "0.3"
 [Setup]
 AppId={{B69DF2B8-C27D-4A1A-BAF7-0DFAE8C54240}
 AppName={#AppName}
@@ -7,7 +7,7 @@ AppVersion={#AppVersion}
 DefaultDirName={autopf}\FB-01 Librarian
 DefaultGroupName={#AppName}
 OutputDir=..\dist
-OutputBaseFilename=FB01-Librarian-v0.2.1-Setup
+OutputBaseFilename=FB01-Librarian-v0.3-Setup
 Compression=lzma
 SolidCompression=yes
 PrivilegesRequired=lowest
