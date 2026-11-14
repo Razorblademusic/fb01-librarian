@@ -1,5 +1,5 @@
 #define AppName "FB-01 Librarian"
-#define AppVersion "0.3.2"
+#define AppVersion "0.3.5"
 [Setup]
 AppId={{B69DF2B8-C27D-4A1A-BAF7-0DFAE8C54240}
 AppName={#AppName}
