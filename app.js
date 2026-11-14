@@ -5,7 +5,7 @@ let working, midi, busy = false;
 let auditionBusy = false, auditionPending = null, keyboardPort = null;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // Settings are scoped to the persistent Chrome profile and fixed localhost origin.
-const PREF_KEY = 'fb01-librarian-v031-settings';
+const PREF_KEY = 'fb01-librarian-v031-settings'; // Retain key for upgrades
 function getPrefs() { try { return JSON.parse(localStorage.getItem(PREF_KEY) || '{}'); } catch { return {}; } }
 function savePrefs() {
   const p = getPrefs();
@@ -72,14 +72,26 @@ async function openFromFolder() {
     const folder=await usableFolder(false);
     if (!folder) { $('files').click(); return; }
     const handles=[];
-    for await (const [name,handle] of folder.entries()) if(handle.kind==='file' && /\.syx$/i.test(name)) handles.push(handle);
-    handles.sort((a,b)=>a.name.localeCompare(b.name));
+    for await (const [name,handle] of folder.entries())
+      if(handle.kind==='file' && /\.syx$/i.test(name)) handles.push(handle);
+    handles.sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true}));
     if (!handles.length) { status('No .syx files in '+folder.name); return; }
-    const name=prompt('Enter a SysEx filename from '+folder.name+':\n'+handles.map(h=>h.name).join('\n').slice(0,2000),handles[0].name);
-    if (!name) return;
-    const handle=handles.find(h=>h.name.toLowerCase()===name.trim().toLowerCase());
-    if (!handle) { status('File not found in default folder.'); return; }
-    await loadFiles([await handle.getFile()]);
+    const dialog=$('sysexDialog'), list=$('sysexFileList');
+    list.replaceChildren();
+    for (const handle of handles) {
+      const option=document.createElement('option');
+      option.value=handle.name; option.textContent=handle.name;
+      list.append(option);
+    }
+    $('sysexDialogTitle').textContent='Open SysEx bank from '+folder.name;
+    dialog.showModal();
+    const result=await new Promise(resolve => {
+      const done=()=>{dialog.removeEventListener('close',done);resolve(dialog.returnValue);};
+      dialog.addEventListener('close',done,{once:true});
+    });
+    if(result!=='open') return;
+    const handle=handles.find(h=>h.name===list.value);
+    if(handle) await loadFiles([await handle.getFile()]);
   } catch(e) { status('Folder open failed: '+e.message); }
 }
 async function saveToFolder(bytes,name) {
@@ -298,15 +310,16 @@ $('audition').onclick = queueAudition;
 $('panic').onclick = () => { try { allNotesOff(); status('All notes off sent.'); } catch(error) { status(error.message); } };
 $('sourceVoices').onchange = () => { if ($('autoAudition').checked) queueAudition(); };
 
-$('connect').onclick=async () => {
+async function enableMidi() {
   try {
     if (!navigator.requestMIDIAccess) throw Error('Open this app in Microsoft Edge or Chrome.');
     midi=await navigator.requestMIDIAccess({sysex:true});
     midi.onstatechange=ports;
     ports();
-    status('Select your MIDI interface input and output.');
-  } catch(error) { status('MIDI access failed. '+error.message); }
-};
+    status('MIDI connected. Previous device selections restored where available.');
+  } catch(error) { status('MIDI access unavailable: '+error.message+'. Click Enable MIDI to retry.'); }
+}
+$('connect').onclick=enableMidi;
 $('input').onchange=$('output').onchange=()=>{savePrefs();controls();};
 $('hardware').onchange=controls;
 $('request').onclick=() => transfer(async (input,output) => {
@@ -404,4 +417,6 @@ $('backup').onclick=()=>saveToFolder(source().original,'FB01-bank-'+(source().sl
 $('save').onclick=()=>saveToFolder(FB.encode(working),'FB01-working-bank.syx');
 controls();
 
-initializeSettings();
+// Restore stored preferences before attempting MIDI access. Chrome may require a
+// user gesture for its initial SysEx permission; the Enable MIDI button remains.
+initializeSettings().then(() => enableMidi());
