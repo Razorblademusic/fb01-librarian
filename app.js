@@ -3,6 +3,7 @@ const $ = id => document.getElementById(id);
 const sources = [];
 let working, midi, busy = false;
 let auditionBusy = false, auditionPending = null, keyboardPort = null;
+let activeVoicePanel = 'source', navigatorBank = 0, navigatorPatch = 0, navigatorBusy = false;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // Settings are scoped to the persistent Chrome profile and fixed localhost origin.
 const PREF_KEY = 'fb01-librarian-v031-settings'; // Retain key for upgrades
@@ -95,19 +96,37 @@ async function openFromFolder() {
   } catch(e) { status('Folder open failed: '+e.message); }
 }
 async function saveToFolder(bytes,name) {
-  try {
-    const folder=await usableFolder(true);
-    if (!folder) { download(bytes,name); return; }
-    const filename=prompt('Save SysEx as:',name);
-    if (!filename) return;
-    if (!/^[^\\/:*?"<>|]+\.syx$/i.test(filename)) throw Error('Use a valid .syx filename.');
-    const file=await folder.getFileHandle(filename,{create:true});
-    // Explicit confirmation before replacing existing data.
-    const existing=await file.getFile();
-    if(existing.size && !confirm('Overwrite '+filename+'?')) return;
-    const stream=await file.createWritable(); await stream.write(bytes); await stream.close();
-    status('Saved '+filename+' to '+folder.name);
-  } catch(e) { status('Folder save failed: '+e.message); }
+  // Chrome's native Windows Save As dialog permits browsing any drive/folder.
+  // The picker remembers its previous directory under this stable id.
+  if (window.showSaveFilePicker) {
+    try {
+      const opts = {
+        id:'fb01-save-sysex',
+        suggestedName:name,
+        types:[{description:'Yamaha SysEx bank (*.syx)',accept:{'application/octet-stream':['.syx']}}],
+        excludeAcceptAllOption:true
+      };
+      if (sysexFolder) opts.startIn=sysexFolder;
+      let handle;
+      try { handle=await window.showSaveFilePicker(opts); }
+      catch(e) {
+        // A remembered folder may have become unavailable; retry without it.
+        if (e.name !== 'TypeError' || !opts.startIn) throw e;
+        delete opts.startIn;
+        handle=await window.showSaveFilePicker(opts);
+      }
+      const stream=await handle.createWritable();
+      await stream.write(bytes);
+      await stream.close();
+      status('Saved '+handle.name+' successfully.');
+    } catch(e) {
+      if (e.name!=='AbortError') status('Save failed: '+e.message);
+    }
+    return;
+  }
+  // Fallback for browsers without File System Access support.
+  download(bytes,name);
+  status('Downloaded '+name+' (choose the destination in browser download settings).');
 }
 async function initializeSettings() {
   restorePrefs();
@@ -141,7 +160,8 @@ function controls() {
     connect:!busy && !midi, clone:source(), backup:source(), copy:source() && working,
     rename:working, up:selected>0, down:selected>=0 && selected<47, save:working
   };
-  enabled.audition = !busy && !auditionBusy && !!source() && !!$('output').value;
+  enabled.audition = !busy && !auditionBusy && !!(activeVoicePanel === 'working' ? working : source()) && !!$('output').value;
+  for (const id of ['navBankPrev','navBankNext','navPatchPrev','navPatchNext']) $(id).disabled = !midi || busy || auditionBusy || navigatorBusy || !$('output').value;
   enabled.panic = !!midi && !!$('output').value;
   for (const [id,on] of Object.entries(enabled)) $(id).disabled = !on;
 }
@@ -293,22 +313,23 @@ async function auditionVoice(bank, index) {
     if (auditionPending) {
       const next = auditionPending;
       auditionPending = null;
-      if (next.bank === source() && next.index === $('sourceVoices').selectedIndex) auditionVoice(next.bank,next.index);
+      if (next.bank === (next.panel === 'working' ? working : source()) && next.index === $(next.panel === 'working' ? 'workingVoices' : 'sourceVoices').selectedIndex) auditionVoice(next.bank,next.index);
     }
   }
 }
-function queueAudition() {
-  const bank = source(), index = $('sourceVoices').selectedIndex;
+function queueAudition(panel = activeVoicePanel) {
+  const bank = panel === 'working' ? working : source(), index = $(panel === 'working' ? 'workingVoices' : 'sourceVoices').selectedIndex;
   if (!bank || index < 0) return;
-  if (auditionBusy) { auditionPending = {bank,index}; return; }
+  if (auditionBusy) { auditionPending = {bank,index,panel}; return; }
   auditionVoice(bank,index);
 }
 $('keyboard').onchange = () => { attachKeyboard(); savePrefs(); };
 for (const id of ['auditionChannel','channel','autoAudition']) $(id).addEventListener('change',savePrefs);
 $('folder').onclick = chooseFolder;
-$('audition').onclick = queueAudition;
+$('audition').onclick = () => queueAudition();
 $('panic').onclick = () => { try { allNotesOff(); status('All notes off sent.'); } catch(error) { status(error.message); } };
-$('sourceVoices').onchange = () => { if ($('autoAudition').checked) queueAudition(); };
+$('sourceVoices').onchange = () => { activeVoicePanel='source'; controls(); if ($('autoAudition').checked) queueAudition('source'); };
+$('sourceVoices').addEventListener('focus', () => { activeVoicePanel='source'; controls(); });
 
 async function enableMidi() {
   try {
@@ -387,9 +408,12 @@ async function loadFiles(files) {
 }
 $('sources').onchange=()=>{fillVoices('sourceVoices',source(),0); controls(); if ($('autoAudition').checked) queueAudition();};
 $('workingVoices').onchange=()=> {
+  activeVoicePanel='working';
+  if ($('autoAudition').checked) queueAudition('working');
   $('name').value=FB.name(working.voices[$('workingVoices').selectedIndex],7);
   controls();
 };
+$('workingVoices').addEventListener('focus', () => { activeVoicePanel='working'; controls(); });
 $('clone').onclick=()=>{
   if(working && !confirm('Replace the working bank? Save it first if you want to keep it.')) return;
   const bank=source();
@@ -415,6 +439,52 @@ for(const [id,step] of [['up',-1],['down',1]]) $(id).onclick=()=>{
 };
 $('backup').onclick=()=>saveToFolder(source().original,'FB01-bank-'+(source().slot+1)+'-backup.syx');
 $('save').onclick=()=>saveToFolder(FB.encode(working),'FB01-working-bank.syx');
+
+// Hardware navigator: volatile instrument-1 bank/voice selection only.
+// FB-01 configuration parameter 04 selects bank (0..6); parameter 05 selects voice (0..47).
+// This is separate from the SysEx bank dump selector and never stores RAM data.
+function navigatorLabel() {
+  const found = sources.find(b => b.slot === navigatorBank);
+  const voice = found?.voices?.[navigatorPatch];
+  $('navBankValue').textContent = `${navigatorBank+1} / 7`;
+  $('navPatchValue').textContent = `${navigatorPatch+1} / 48`;
+  $('navVoiceName').textContent = voice ? FB.name(voice,7) || '(unnamed)' : 'Voice name unavailable';
+}
+async function navigateHardware(bankDelta, patchDelta) {
+  if (!midi || busy || auditionBusy || navigatorBusy) return;
+  const output = midi.outputs.get($('output').value);
+  if (!output) { status('Select FB-01 MIDI output first.'); return; }
+  const nextBank = Math.max(0,Math.min(6,navigatorBank+bankDelta));
+  const nextPatch = Math.max(0,Math.min(47,navigatorPatch+patchDelta));
+  if (nextBank === navigatorBank && nextPatch === navigatorPatch) return;
+  navigatorBusy=true; controls();
+  try {
+    await output.open();
+    allNotesOff();
+    const ch = auditionMidiChannel();
+    // Channel-specific configuration messages (Yamaha FB-01 MIDI specification).
+    if (nextBank !== navigatorBank) output.send([0xf0,0x43,0x10|ch,0x15,0x04,nextBank,0xf7]);
+    // Select voice explicitly, including after a bank change.
+    output.send([0xf0,0x43,0x10|ch,0x15,0x05,nextPatch,0xf7]);
+    navigatorBank=nextBank; navigatorPatch=nextPatch;
+    navigatorLabel();
+    status(`Hardware navigator: bank ${nextBank+1}, patch ${nextPatch+1}. Play your USB keyboard.`);
+  } catch(error) { status('Hardware navigation failed: '+error.message); }
+  finally { navigatorBusy=false; controls(); }
+}
+for (const [id,db,dp] of [['navBankPrev',-1,0],['navBankNext',1,0],['navPatchPrev',0,-1],['navPatchNext',0,1]]) {
+  $(id).onclick=()=>navigateHardware(db,dp);
+}
+$('hardwareNavigator').addEventListener('keydown', event => {
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  const moves = {ArrowUp:[1,0],ArrowDown:[-1,0],ArrowLeft:[0,-1],ArrowRight:[0,1]};
+  const move=moves[event.key];
+  if (!move) return;
+  event.preventDefault();
+  navigateHardware(...move);
+});
+navigatorLabel();
+
 controls();
 
 // Restore stored preferences before attempting MIDI access. Chrome may require a
