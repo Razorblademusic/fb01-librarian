@@ -13,6 +13,7 @@ function savePrefs() {
   for (const id of ['input','output','keyboard']) {
     const port = midi && (id === 'output' ? midi.outputs : midi.inputs).get($(id).value);
     if (port) p[id] = {id:port.id, name:port.name};
+    else if (id === 'keyboard') p.keyboard = null; // Persist Disabled selection
   }
   p.channel = $('channel').value;
   p.auditionChannel = $('auditionChannel').value;
@@ -249,7 +250,7 @@ function auditionMidiChannel() {
 }
 function keyboardPorts() {
   const list = $('keyboard'), previous = list.value;
-  list.replaceChildren(new Option('Select USB keyboard', ''));
+  list.replaceChildren(new Option('Disabled — Reaper owns keyboard', ''));
   if (!midi) return;
   for (const port of midi.inputs.values()) {
     if (port.state === 'connected') list.add(new Option(port.name || port.id, port.id));
@@ -257,12 +258,31 @@ function keyboardPorts() {
   list.value = previous;
   if (list.selectedIndex < 0) list.selectedIndex = 0;
   restorePort('keyboard');
+  // No saved keyboard means disabled, not automatic first-device selection.
   attachKeyboard();
 }
-function attachKeyboard() {
-  if (keyboardPort) keyboardPort.removeEventListener('midimessage', forwardKeyboard);
-  keyboardPort = midi?.inputs.get($('keyboard').value) || null;
-  if (keyboardPort) keyboardPort.addEventListener('midimessage', forwardKeyboard);
+async function attachKeyboard() {
+  const previous = keyboardPort;
+  const next = midi?.inputs.get($('keyboard').value) || null;
+  if (previous === next) return;
+  if (previous) {
+    previous.removeEventListener('midimessage', forwardKeyboard);
+    // Never close the SysEx return input, even if selected as keyboard.
+    if (previous.id !== $('input').value) {
+      try { await previous.close(); } catch (error) { console.warn('Keyboard port close:', error); }
+    }
+  }
+  keyboardPort = next;
+  if (next) {
+    try {
+      await next.open();
+      // A device that is also used for SysEx can have both listeners.
+      next.addEventListener('midimessage', forwardKeyboard);
+    } catch (error) {
+      keyboardPort = null;
+      status('Cannot open keyboard MIDI port: ' + error.message);
+    }
+  }
 }
 function forwardKeyboard(event) {
   const output = midi?.outputs.get($('output').value);
@@ -323,7 +343,7 @@ function queueAudition(panel = activeVoicePanel) {
   if (auditionBusy) { auditionPending = {bank,index,panel}; return; }
   auditionVoice(bank,index);
 }
-$('keyboard').onchange = () => { attachKeyboard(); savePrefs(); };
+$('keyboard').onchange = () => { savePrefs(); attachKeyboard(); };
 for (const id of ['auditionChannel','channel','autoAudition']) $(id).addEventListener('change',savePrefs);
 $('folder').onclick = chooseFolder;
 $('audition').onclick = () => queueAudition();

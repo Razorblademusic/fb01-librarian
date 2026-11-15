@@ -1,0 +1,15 @@
+FB-01 Librarian v0.3.6 — MIDI Sharing Test
+
+- Keyboard dropdown now offers Disabled, and this choice persists.
+- Keyboard MIDI input can be any listed MIDI input, including a loopMIDI virtual port fed by Reaper.
+- Switching keyboard input removes its old listener and explicitly closes its port unless that port is also the SysEx return input.
+- Existing bank, SysEx, hardware navigation and audition features are unchanged.
+
+TEST PROCEDURE
+1. Set Keyboard / Reaper MIDI input to Disabled; close and relaunch. Confirm Reaper retains KeyLab input.
+2. For simultaneous audition, install/configure loopMIDI and create a port named FB01 From Reaper.
+3. In Reaper, send KeyLab MIDI from a monitored track to FB01 From Reaper.
+4. In Librarian, choose FB01 From Reaper as keyboard input, and M8U eX 2 as MIDI output.
+5. Keep M8U eX 3 as SysEx input. Avoid routing the FB-01 output back to the virtual input.
+
+NOTE: The Windows/Chrome Web MIDI driver may still reserve MIDI devices during requestMIDIAccess. If Reaper still loses the KeyLab with keyboard Disabled, do not assume this patch fixes driver-level exclusivity. Report that result before further changes.

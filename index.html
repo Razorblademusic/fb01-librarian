@@ -9,7 +9,7 @@ dialog{background:#202c38;color:#edf2f6;border:1px solid #7d95aa;border-radius:1
 <section aria-label="MIDI connection">
 <div class="row"><button id="connect" class="primary">Enable MIDI</button>
 <label>MIDI input<select id="input"></select></label><label>MIDI output<select id="output"></select></label>
-<label>USB keyboard<select id="keyboard"></select></label><label>Audition MIDI channel<input id="auditionChannel" type="number" min="1" max="16" value="1"></label><label>System channel<input type="number" id="channel" min="1" max="16" value="1"></label></div>
+<label>Keyboard / Reaper MIDI input<select id="keyboard"></select></label><label>Audition MIDI channel<input id="auditionChannel" type="number" min="1" max="16" value="1"></label><label>System channel<input type="number" id="channel" min="1" max="16" value="1"></label></div>
 <div class="row"><label>Hardware bank<select id="hardware"></select></label><button id="request">Request bank</button><button id="listen">Listen for panel dump</button><button id="send">Send working bank</button></div>
 </section>
 <p id="status" role="status">Open a .syx file or enable MIDI to receive a bank.</p>
